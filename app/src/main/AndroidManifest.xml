@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- GitHub release metadata only. The game WebView remains offline. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="Dad 'n Me"
         android:icon="@mipmap/ic_launcher"

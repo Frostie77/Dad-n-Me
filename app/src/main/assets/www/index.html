@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Dad 'n Me</title>
+<style>
+html,body { margin:0; width:100%; height:100%; overflow:hidden; background:#000; color:#fff; font-family:sans-serif; }
+#stage { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+#game { width:min(100vw, calc(100vh * 4 / 3)); height:min(100vh, calc(100vw * 3 / 4)); }
+ruffle-player { width:100%; height:100%; }
+#status { position:absolute; left:20px; bottom:20px; color:#ddd; font-size:14px; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="game"></div></div>
+<div id="status">Starting Dad 'n Me…</div>
+<script>
+window.RufflePlayer = window.RufflePlayer || {};
+window.RufflePlayer.config = {
+  autoplay: 'on', unmuteOverlay: 'visible', letterbox: 'on', contextMenu: 'off',
+  allowScriptAccess: true, allowNetworking: 'all', publicPath: 'ruffle/'
+};
+let player;
+const keys = {
+  up:{key:'ArrowUp',code:'ArrowUp',keyCode:38},
+  down:{key:'ArrowDown',code:'ArrowDown',keyCode:40},
+  left:{key:'ArrowLeft',code:'ArrowLeft',keyCode:37},
+  right:{key:'ArrowRight',code:'ArrowRight',keyCode:39},
+  a:{key:'a',code:'KeyA',keyCode:65},
+  s:{key:'s',code:'KeyS',keyCode:83}
+};
+const sources = Object.create(null);
+window.dadKey = (id, pressed, source) => {
+  const spec = keys[id];
+  if (!spec || !player) return;
+  if (!sources[id]) sources[id] = new Set();
+  const wasDown = sources[id].size > 0;
+  if (pressed) sources[id].add(source); else sources[id].delete(source);
+  const nowDown = sources[id].size > 0;
+  if (wasDown === nowDown) return;
+  player.focus();
+  player.dispatchEvent(new KeyboardEvent(nowDown ? 'keydown' : 'keyup', {
+    key:spec.key, code:spec.code, keyCode:spec.keyCode, which:spec.keyCode,
+    bubbles:true, composed:true, cancelable:true
+  }));
+};
+window.addEventListener('load', async () => {
+  const status = document.getElementById('status');
+  try {
+    const ruffle = window.RufflePlayer.newest();
+    if (!ruffle) throw new Error('Ruffle runtime missing');
+    player = ruffle.createPlayer();
+    document.getElementById('game').appendChild(player);
+    await player.ruffle().load({url:'/game/dad-n-me.swf', allowNetworking:'all', allowScriptAccess:true});
+    status.remove();
+    player.focus();
+  } catch (e) {
+    status.textContent = 'Game load failed: ' + String(e);
+    console.error('DadNMe load failed', e);
+  }
+});
+</script>
+<script src="ruffle/ruffle.js"></script>
+</body>
+</html>

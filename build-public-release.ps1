@@ -4,7 +4,7 @@
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
-$version = '0.1.0'
+$version = '0.1.1'
 $apkName = "Dad-n-Me-v$version-Android.apk"
 $releaseDir = Join-Path $PSScriptRoot 'release'
 $unsigned = Join-Path $PSScriptRoot 'app\build\outputs\apk\release\app-release-unsigned.apk'
@@ -84,7 +84,7 @@ function Assert-GameFree([string]$apkPath) {
     } finally { $archive.Dispose() }
 }
 
-Write-Host 'Building Dad n Me v0.1.0 release (original game excluded)...'
+Write-Host 'Building Dad n Me v0.1.1 release (original game excluded)...'
 & $gradle ':app:assembleRelease'
 if ($LASTEXITCODE -ne 0) { throw 'Release Gradle build failed.' }
 if (!(Test-Path $unsigned)) { throw 'Unsigned release APK missing.' }

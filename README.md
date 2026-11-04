@@ -6,7 +6,7 @@ Developed and tested on the **AYN Odin 2 Portal**.
 
 ## Download and installation
 
-1. Install the Dad 'n Me Android APK.
+1. Download the [latest published Android APK](https://github.com/Frostie77/Dad-n-Me/releases/latest) and install it.
 2. Get the original Flash game from [Dad 'n Me on Newgrounds](https://www.newgrounds.com/portal/view/254456), or try the [original Newgrounds SWF file](https://uploads.ungrounded.net/254000/254456_DadNMeNewgrounds.swf).
 3. Open the Android app and tap **Select SWF File** to import your downloaded `.swf`. The app stores it privately; you only need to import it once.
 
@@ -22,6 +22,12 @@ If the SWF link opens in your browser instead of downloading, use **Save link as
 - Custom flaming-mask Android launcher icon
 
 Press **Start** to open FrostFrontend.
+
+## Updates
+
+The current public release is **v0.1.0**. Live GitHub update checking (manual checks and optional automatic checks on startup) is being added for the next signed release, **v0.1.1**. Once available, FrostFrontend will offer a link to the published GitHub release; it will **never download or install an APK automatically**. Existing v0.1.0 installations cannot check for updates in-app.
+
+Future signed updates use the same package name and signing key, allowing installation over an existing public release without uninstalling it. Debug builds use a different signing certificate; don't uninstall an app with unsaved data without backing it up first.
 
 ## Development
 

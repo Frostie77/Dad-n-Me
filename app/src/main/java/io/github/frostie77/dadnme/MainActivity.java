@@ -64,6 +64,10 @@ public final class MainActivity extends Activity {
     private DadTouchControls touchControls;
     private boolean showingButtonMap;
     private boolean showingMovementSettings;
+    private boolean updateChecking, updateCheckedThisLaunch, updateNoticeShown;
+    private String updateStatusText = "Not checked yet.";
+    private String updateLatestText = "Not checked";
+    private String updateReleaseUrl;
     private static final FrostControlProfile CONTROL_PROFILE = FrostControlProfile.of("dad-n-me",
         new FrostButtonMapper.Action("light", "Light Attack", KeyEvent.KEYCODE_BUTTON_A),
         new FrostButtonMapper.Action("heavy", "Heavy Attack", KeyEvent.KEYCODE_BUTTON_X)
@@ -92,7 +96,7 @@ public final class MainActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(24, 24, 24, 24);
         TextView title = new TextView(this);
-        title.setText("Dad 'n Me — Android Test");
+        title.setText("Dad 'n Me — Android");
         title.setTextColor(Color.WHITE);
         title.setTextSize(25);
         title.setGravity(Gravity.CENTER);
@@ -286,8 +290,8 @@ public final class MainActivity extends Activity {
             new FrostFrontendView.Tab("touch", "Touch Settings"),
             new FrostFrontendView.Tab("updates", "Updates")
         ));
-        frontend.setUpdateInfo("Dad 'n Me 0.1.0-dev", "Not checked",
-            "Development build; automatic update checking is not configured");
+        frontend.setUpdateInfo("Dad 'n Me " + DadNMeUpdates.installedVersion(this),
+            updateLatestText, updateStatusText);
         frontend.setBackListener(() -> {
             if (showingMovementSettings) {
                 showingMovementSettings = false;
@@ -367,11 +371,20 @@ public final class MainActivity extends Activity {
                             item("touch_reset", "Reset Touch Controls", "", "")
                         );
                     case "updates":
-                        return Arrays.asList(
-                            item("version", "Installed Version", "0.1.0-dev", "Development build"),
-                            item("check", "Check for Updates", "Not configured",
-                                "This development port has no update feed yet")
-                        );
+                        List<FrostFrontendView.Item> updateRows = new ArrayList<>();
+                        updateRows.add(item("version", "Installed Version",
+                            DadNMeUpdates.installedVersion(MainActivity.this),
+                            "Current installed Android APK"));
+                        updateRows.add(item("check", "Check for Updates",
+                            updateChecking ? "Checking..." : updateLatestText,
+                            updateStatusText));
+                        updateRows.add(item("automatic", "Check Automatically",
+                            preferences.getBoolean("updates_automatic", true) ? "On" : "Off",
+                            "Check GitHub for new stable Android versions at startup"));
+                        if (updateReleaseUrl != null)
+                            updateRows.add(item("release", "View Available Release",
+                                updateLatestText, "Open the verified GitHub release page"));
+                        return updateRows;
                     default: return Collections.emptyList();
                 }
             }
@@ -381,7 +394,8 @@ public final class MainActivity extends Activity {
             }
 
             @Override public void onItemAdjusted(String tabId, String itemId, int direction) {
-                if (itemId.equals("display") || itemId.equals("directions") ||
+                if (itemId.equals("display") || itemId.equals("automatic") ||
+                    itemId.equals("directions") ||
                     itemId.equals("deadzone") || itemId.startsWith("invert_") ||
                     itemId.startsWith("touch_") && !itemId.equals("touch_reset"))
                     handleItem(itemId, direction);
@@ -404,6 +418,7 @@ public final class MainActivity extends Activity {
             }
         });
         menuButton.setOnClickListener(v -> frontend.open());
+        startUpdateCheck(false);
     }
 
     private void handleItem(String id, int direction) {
@@ -485,10 +500,73 @@ public final class MainActivity extends Activity {
                 .putInt("touch_opacity", 1).putInt("touch_pad", 0)
                 .putBoolean("touch_sides", false).putInt("touch_position", 1).apply();
         } else if ("check".equals(id)) {
-            android.widget.Toast.makeText(this, "No update feed is configured for this test port",
-                android.widget.Toast.LENGTH_SHORT).show();
+            startUpdateCheck(true);
+            return;
+        } else if ("automatic".equals(id)) {
+            boolean enabled = !preferences.getBoolean("updates_automatic", true);
+            preferences.edit().putBoolean("updates_automatic", enabled).apply();
+            if (enabled) startUpdateCheck(true);
+            return;
+        } else if ("release".equals(id)) {
+            openUpdateRelease();
+            return;
         }
         updateTouchControls();
+    }
+
+
+    /**
+     * Manual and opt-in automatic GitHub checks happen outside the UI thread.
+     * No APK is fetched or installed; the user must choose to open GitHub.
+     */
+    private void startUpdateCheck(boolean manual) {
+        if (updateChecking) return;
+        if (!manual) {
+            if (!preferences.getBoolean("updates_automatic", true) ||
+                updateCheckedThisLaunch) return;
+            updateCheckedThisLaunch = true;
+        }
+        updateChecking = true;
+        updateStatusText = "Checking published GitHub releases...";
+        updateReleaseUrl = null;
+        updateLatestText = "Checking...";
+        refreshUpdateRows();
+        new Thread(() -> {
+            DadNMeUpdates.Result result = DadNMeUpdates.check(getApplicationContext());
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                updateChecking = false;
+                updateStatusText = result.status;
+                updateLatestText = result.latest;
+                updateReleaseUrl = result.releaseUrl;
+                refreshUpdateRows();
+                if (result.available && !updateNoticeShown) {
+                    updateNoticeShown = true;
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("Dad 'n Me update available")
+                        .setMessage("A new stable Android version (" + result.latest +
+                            ") is published on GitHub.")
+                        .setPositiveButton("View Release", (dialog, which) -> openUpdateRelease())
+                        .setNegativeButton("Later", null)
+                        .show();
+                }
+            });
+        }, "DadNMe-update-check").start();
+    }
+
+    private void refreshUpdateRows() {
+        if (frontend != null) {
+            frontend.setUpdateInfo("Dad 'n Me " + DadNMeUpdates.installedVersion(this),
+                updateLatestText, updateStatusText);
+            if (frontend.isOpen()) frontend.refresh();
+        }
+    }
+
+    private void openUpdateRelease() {
+        if (updateReleaseUrl == null ||
+            !updateReleaseUrl.matches("https://github\\.com/Frostie77/Dad-n-Me/releases/tag/v[0-9]+\\.[0-9]+\\.[0-9]+"))
+            return;
+        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(updateReleaseUrl)));
     }
 
     /** Switch Auto controls only when the input method actually changes. */

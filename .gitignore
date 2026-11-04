@@ -8,3 +8,10 @@ app/src/main/assets/www/ruffle/*
 !app/src/main/assets/www/ruffle/.gitkeep
 *.swf
 *.apk
+
+# Local signing material and generated release artifacts
+/release/
+*.jks
+*.keystore
+*.p12
+*.pfx

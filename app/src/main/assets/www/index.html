@@ -7,7 +7,7 @@
 <style>
 html,body { margin:0; width:100%; height:100%; overflow:hidden; background:#000; color:#fff; font-family:sans-serif; }
 #stage { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
-#game { width:min(100vw, calc(100vh * 4 / 3)); height:min(100vh, calc(100vw * 3 / 4)); }
+#game { width:min(100vw, calc(100vh * 4 / 3)); height:min(100vh, calc(100vw * 3 / 4)); transform-origin:center center; }
 ruffle-player { width:100%; height:100%; }
 #status { position:absolute; left:20px; bottom:20px; color:#ddd; font-size:14px; }
 </style>
@@ -22,6 +22,50 @@ window.RufflePlayer.config = {
   allowScriptAccess: true, allowNetworking: 'all', publicPath: 'ruffle/'
 };
 let player;
+let dadMenuPaused = false, dadBackgroundPaused = false, dadRufflePaused = false;
+let dadDisplayMode = 'original';
+function syncRufflePause() {
+  const paused = dadMenuPaused || dadBackgroundPaused;
+  if (!player || dadRufflePaused === paused) return;
+  try {
+    if (paused) player.ruffle().suspend();
+    else player.ruffle().resume();
+  } catch (error) {
+    try {
+      if (paused && typeof player.pause === 'function') player.pause();
+      else if (!paused && typeof player.play === 'function') player.play();
+    } catch (fallbackError) {
+      console.warn('DadNMe pause failed', fallbackError);
+      return;
+    }
+  }
+  dadRufflePaused = paused;
+  if (!paused && player) player.focus();
+}
+window.dadSetMenuPaused = value => {
+  dadMenuPaused = !!value;
+  if (dadMenuPaused) window.dadClearKeys();
+  syncRufflePause();
+};
+window.dadSetBackgroundPaused = value => {
+  dadBackgroundPaused = !!value;
+  if (dadBackgroundPaused) window.dadClearKeys();
+  syncRufflePause();
+};
+window.dadSetDisplayMode = mode => {
+  dadDisplayMode = mode === 'stretch' ? 'stretch' : 'original';
+  const game = document.getElementById('game');
+  if (!game) return;
+  game.style.transform = '';
+  if (dadDisplayMode === 'stretch') {
+    const box = game.getBoundingClientRect();
+    if (box.width && box.height) {
+      game.style.transform = 'scale(' + (innerWidth / box.width) + ',' + (innerHeight / box.height) + ')';
+    }
+  }
+};
+window.addEventListener('resize', () => window.dadSetDisplayMode(dadDisplayMode));
+document.addEventListener('visibilitychange', () => window.dadSetBackgroundPaused(document.hidden));
 const keys = {
   up:{key:'ArrowUp',code:'ArrowUp',keyCode:38},
   down:{key:'ArrowDown',code:'ArrowDown',keyCode:40},
@@ -32,6 +76,7 @@ const keys = {
 };
 const sources = Object.create(null);
 window.dadKey = (id, pressed, source) => {
+  if (pressed && (dadMenuPaused || dadBackgroundPaused)) return;
   const spec = keys[id];
   if (!spec || !player) return;
   if (!sources[id]) sources[id] = new Set();
@@ -45,6 +90,17 @@ window.dadKey = (id, pressed, source) => {
     bubbles:true, composed:true, cancelable:true
   }));
 };
+window.dadClearKeys = () => {
+  for (const [id, holders] of Object.entries(sources)) {
+    if (!holders.size || !player) continue;
+    const spec = keys[id];
+    holders.clear();
+    player.dispatchEvent(new KeyboardEvent('keyup', {
+      key: spec.key, code: spec.code, keyCode: spec.keyCode, which: spec.keyCode,
+      bubbles: true, composed: true, cancelable: true
+    }));
+  }
+};
 window.addEventListener('load', async () => {
   const status = document.getElementById('status');
   try {
@@ -54,6 +110,8 @@ window.addEventListener('load', async () => {
     document.getElementById('game').appendChild(player);
     await player.ruffle().load({url:'/game/dad-n-me.swf', allowNetworking:'all', allowScriptAccess:true});
     status.remove();
+    window.dadSetDisplayMode(dadDisplayMode);
+    syncRufflePause();
     player.focus();
   } catch (e) {
     status.textContent = 'Game load failed: ' + String(e);

@@ -2,6 +2,7 @@ package io.github.frostie77.dadnme;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.Context;
 import android.graphics.Color;
 import android.net.Uri;
@@ -30,14 +31,43 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
-/** First standalone loading/input smoke-test. FrostFrontend is integrated later. */
+import io.github.frostfrontend.FrostFrontendView;
+import io.github.frostfrontend.FrostButtonMapper;
+import io.github.frostfrontend.FrostControlProfile;
+import io.github.frostfrontend.FrostSpeakerTest;
+
+/** Dad n Me Android host for Ruffle and the shared FrostFrontend library. */
 public final class MainActivity extends Activity {
     private static final int IMPORT_REQUEST = 7;
     private static final String SWF_NAME = "dad-n-me.swf";
     private FrameLayout root;
     private WebView webView;
     private boolean stickUp, stickDown, stickLeft, stickRight;
+    // The Odin D-pad may arrive as key events or as joystick hat axes.
+    private boolean hatUp, hatDown, hatLeft, hatRight;
+    // Auto touch mode follows the last active input, not merely controller presence.
+    // Odin's integrated gamepad is always present even when playing via touch.
+    private boolean lastInputWasTouch = true;
+    private final Set<Integer> pressedGamepadButtons = new HashSet<>();
+    private SharedPreferences preferences;
+    private FrostFrontendView frontend;
+    private FrostButtonMapper mapper;
+    private final FrostSpeakerTest speakerTest = new FrostSpeakerTest();
+    private Button menuButton;
+    private DadTouchControls touchControls;
+    private boolean showingButtonMap;
+    private boolean showingMovementSettings;
+    private static final FrostControlProfile CONTROL_PROFILE = FrostControlProfile.of("dad-n-me",
+        new FrostButtonMapper.Action("light", "Light Attack", KeyEvent.KEYCODE_BUTTON_A),
+        new FrostButtonMapper.Action("heavy", "Heavy Attack", KeyEvent.KEYCODE_BUTTON_X)
+    );
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -45,6 +75,8 @@ public final class MainActivity extends Activity {
             View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
             View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        preferences = getSharedPreferences("dadnme_settings", MODE_PRIVATE);
+        mapper = CONTROL_PROFILE.load(preferences);
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
         setContentView(root);
@@ -150,6 +182,10 @@ public final class MainActivity extends Activity {
                 catch (IOException e) { return null; }
             }).build();
         webView.setWebViewClient(new WebViewClient() {
+            @Override public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                applyDisplayMode();
+            }
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 Uri u = request.getUrl();
                 if (!"appassets.androidplatform.net".equals(u.getHost()) || !"https".equals(u.getScheme()))
@@ -168,6 +204,7 @@ public final class MainActivity extends Activity {
             }
         });
         root.addView(webView, new FrameLayout.LayoutParams(-1, -1));
+        addFrontend();
         webView.loadUrl("https://appassets.androidplatform.net/assets/www/index.html");
         webView.requestFocus();
     }
@@ -178,33 +215,369 @@ public final class MainActivity extends Activity {
         webView.evaluateJavascript("window.dadKey && window.dadKey('" + key + "'," + down + ",'" + source + "')", null);
     }
 
+    /** D-pad always moves; movement on the analogue stick is also universal. */
     private String keyFor(int code) {
         switch (code) {
             case KeyEvent.KEYCODE_DPAD_UP: return "up";
             case KeyEvent.KEYCODE_DPAD_DOWN: return "down";
             case KeyEvent.KEYCODE_DPAD_LEFT: return "left";
             case KeyEvent.KEYCODE_DPAD_RIGHT: return "right";
-            case KeyEvent.KEYCODE_BUTTON_A: return "a";
-            case KeyEvent.KEYCODE_BUTTON_X: return "s";
-            default: return null;
+            default:
+                if (code == mapper.buttonFor("light")) return "a";
+                if (code == mapper.buttonFor("heavy")) return "s";
+                return null;
         }
     }
 
+    private void releaseGameInputs() {
+        pressedGamepadButtons.clear();
+        stickUp = stickDown = stickLeft = stickRight = false;
+        hatUp = hatDown = hatLeft = hatRight = false;
+        if (touchControls != null) touchControls.releaseAll();
+        if (webView != null) {
+            webView.evaluateJavascript("window.dadClearKeys && window.dadClearKeys()", null);
+        }
+    }
+
+    private void applyDisplayMode() {
+        if (webView != null) {
+            String mode = preferences.getString("display_mode", "original");
+            webView.evaluateJavascript("window.dadSetDisplayMode && window.dadSetDisplayMode('" +
+                ("stretch".equals(mode) ? "stretch" : "original") + "')", null);
+        }
+    }
+
+    private FrostFrontendView.Item item(String id, String name, String value, String description) {
+        return new FrostFrontendView.Item(id, name, value, description);
+    }
+
+    private int cycle(String setting, int count, int direction) {
+        int current = preferences.getInt(setting, 0);
+        int next = (current + direction + count) % count;
+        preferences.edit().putInt(setting, next).apply();
+        return next;
+    }
+
+    private void addFrontend() {
+        touchControls = new DadTouchControls(this,
+            (key, down) -> jsKey(key, down, "touch"));
+        root.addView(touchControls, new FrameLayout.LayoutParams(-1, -1));
+        updateTouchControls();
+
+        menuButton = new Button(this);
+        menuButton.setText("☰");
+        menuButton.setTextSize(17);
+        menuButton.setTextColor(Color.WHITE);
+        menuButton.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xAA28212B));
+        menuButton.setPadding(0, 0, 0, 0);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(dp(48), dp(44),
+            Gravity.TOP | Gravity.RIGHT);
+        params.topMargin = dp(10);
+        params.rightMargin = dp(12);
+        root.addView(menuButton, params);
+
+        frontend = new FrostFrontendView(this);
+        frontend.setVisibility(View.GONE);
+        root.addView(frontend, new FrameLayout.LayoutParams(-1, -1));
+        frontend.setTabs(Arrays.asList(
+            new FrostFrontendView.Tab("graphics", "Graphics"),
+            new FrostFrontendView.Tab("sound", "Sound"),
+            new FrostFrontendView.Tab("controls", "Controls"),
+            new FrostFrontendView.Tab("touch", "Touch Settings"),
+            new FrostFrontendView.Tab("updates", "Updates")
+        ));
+        frontend.setUpdateInfo("Dad 'n Me 0.1.0-dev", "Not checked",
+            "Development build; automatic update checking is not configured");
+        frontend.setBackListener(() -> {
+            if (showingMovementSettings) {
+                showingMovementSettings = false;
+                return true;
+            }
+            return false;
+        });
+        frontend.setAdapter(new FrostFrontendView.Adapter() {
+            @Override public List<FrostFrontendView.Item> itemsForTab(String tabId) {
+                switch (tabId) {
+                    case "graphics":
+                        return Collections.singletonList(item("display", "Display Mode",
+                            "stretch".equals(preferences.getString("display_mode", "original"))
+                                ? "Stretch to Screen" : "Original 4:3",
+                            "Original keeps correct proportions; Stretch fills the display"));
+                    case "sound":
+                        return Collections.singletonList(item("speaker_test",
+                            "Speaker Test: Left → Right → Both", "",
+                            "Listen to each speaker in order; gameplay pauses during the test"));
+                    case "controls":
+                        if (showingButtonMap) {
+                            List<FrostFrontendView.Item> rows = new ArrayList<>();
+                            rows.add(item("map_back", "Back to Controls", "", ""));
+                            for (FrostButtonMapper.Action action : mapper.actions()) {
+                                int binding = mapper.buttonFor(action.id);
+                                rows.add(new FrostFrontendView.Item("map:" + action.id,
+                                    action.name, FrostButtonMapper.buttonName(binding),
+                                    "Press A, then the controller button to assign",
+                                    binding == FrostButtonMapper.UNMAPPED));
+                            }
+                            rows.add(item("map_reset", "Restore Default Controls", "",
+                                "Light Attack A; Heavy Attack X"));
+                            return rows;
+                        }
+                        if (showingMovementSettings) {
+                            return Arrays.asList(
+                                item("movement_back", "Back to Controls", "", ""),
+                                item("directions", "Movement Directions",
+                                    preferences.getInt("movement_mode", 0) == 0 ? "8-way" : "4-way",
+                                    "How the left stick combines movement directions"),
+                                item("deadzone", "Left Stick Deadzone",
+                                    new String[]{"Low", "Normal", "High"}[Math.max(0,
+                                        Math.min(2, preferences.getInt("movement_deadzone", 1)))],
+                                    "How far the stick moves before the character responds"),
+                                item("invert_x", "Invert Movement X",
+                                    preferences.getBoolean("invert_x", false) ? "On" : "Off", ""),
+                                item("invert_y", "Invert Movement Y",
+                                    preferences.getBoolean("invert_y", false) ? "On" : "Off", ""),
+                                item("movement_reset", "Reset Movement Settings", "", "")
+                            );
+                        }
+                        return Arrays.asList(
+                            item("button_mapping", "Button Mapping", "",
+                                "Remap Light Attack and Heavy Attack"),
+                            item("movement_settings", "Movement Settings", "",
+                                "Configure left-stick movement and deadzone")
+                        );
+                    case "touch":
+                        return Arrays.asList(
+                            item("touch_mode", "Touch Controls",
+                                new String[]{"Auto", "On", "Off"}[Math.max(0,
+                                    Math.min(2, preferences.getInt("touch_mode", 0)))],
+                                "Auto follows the last input: touchscreen or controller"),
+                            item("touch_size", "Control Size",
+                                new String[]{"Small", "Medium", "Large"}[Math.max(0,
+                                    Math.min(2, preferences.getInt("touch_size", 1)))], ""),
+                            item("touch_opacity", "Control Opacity",
+                                new String[]{"Low", "Medium", "High"}[Math.max(0,
+                                    Math.min(2, preferences.getInt("touch_opacity", 1)))], ""),
+                            item("touch_pad", "Movement Pad",
+                                preferences.getInt("touch_pad", 0) == 0 ? "Joystick" : "D-pad", ""),
+                            item("touch_sides", "Control Sides",
+                                preferences.getBoolean("touch_sides", false) ? "Swapped" : "Standard", ""),
+                            item("touch_position", "Control Position",
+                                new String[]{"Edge", "Normal", "Inset"}[Math.max(0,
+                                    Math.min(2, preferences.getInt("touch_position", 1)))], ""),
+                            item("touch_reset", "Reset Touch Controls", "", "")
+                        );
+                    case "updates":
+                        return Arrays.asList(
+                            item("version", "Installed Version", "0.1.0-dev", "Development build"),
+                            item("check", "Check for Updates", "Not configured",
+                                "This development port has no update feed yet")
+                        );
+                    default: return Collections.emptyList();
+                }
+            }
+
+            @Override public void onItemSelected(String tabId, String itemId) {
+                handleItem(itemId, 1);
+            }
+
+            @Override public void onItemAdjusted(String tabId, String itemId, int direction) {
+                if (itemId.equals("display") || itemId.equals("directions") ||
+                    itemId.equals("deadzone") || itemId.startsWith("invert_") ||
+                    itemId.startsWith("touch_") && !itemId.equals("touch_reset"))
+                    handleItem(itemId, direction);
+            }
+
+            @Override public void onVisibilityChanged(boolean visible) {
+                releaseGameInputs();
+                if (webView != null) {
+                    webView.evaluateJavascript("window.dadSetMenuPaused && window.dadSetMenuPaused(" +
+                        visible + ")", null);
+                }
+                if (!visible) {
+                    speakerTest.stop();
+                    showingButtonMap = false;
+                    showingMovementSettings = false;
+                    if (webView != null) webView.requestFocus();
+                }
+                if (menuButton != null) menuButton.setVisibility(visible ? View.GONE : View.VISIBLE);
+                updateTouchControls();
+            }
+        });
+        menuButton.setOnClickListener(v -> frontend.open());
+    }
+
+    private void handleItem(String id, int direction) {
+        if ("speaker_test".equals(id)) {
+            if (speakerTest.start())
+                android.widget.Toast.makeText(this, "LEFT, then RIGHT, then BOTH",
+                    android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        if ("display".equals(id)) {
+            String next = "stretch".equals(preferences.getString("display_mode", "original"))
+                ? "original" : "stretch";
+            preferences.edit().putString("display_mode", next).apply();
+            applyDisplayMode();
+            return;
+        }
+        if ("button_mapping".equals(id)) {
+            showingButtonMap = true;
+            showingMovementSettings = false;
+            frontend.enterButtonMapping(mapper, () -> showingButtonMap = false);
+            return;
+        }
+        if ("map_back".equals(id)) { frontend.requestMappingBack(); return; }
+        if ("map_reset".equals(id)) {
+            mapper.resetDefaults();
+            mapper.save(preferences, CONTROL_PROFILE.preferencePrefix());
+            return;
+        }
+        if (id.startsWith("map:")) {
+            String actionId = id.substring(4);
+            frontend.beginButtonCapture(actionId, new FrostFrontendView.ButtonCaptureListener() {
+                @Override public void onCaptured(int code) {
+                    FrostButtonMapper.Change change = mapper.assign(actionId, code);
+                    mapper.save(preferences, CONTROL_PROFILE.preferencePrefix());
+                    releaseGameInputs();
+                    if (change.unmappedAction != null) {
+                        frontend.showMappingNotice(change.unmappedAction + " is now Unmapped");
+                    }
+                    frontend.refresh();
+                }
+                @Override public void onCancelled() {}
+            });
+            return;
+        }
+        if ("movement_settings".equals(id)) {
+            showingMovementSettings = true;
+            return;
+        }
+        if ("movement_back".equals(id)) { showingMovementSettings = false; return; }
+        if ("movement_reset".equals(id)) {
+            preferences.edit().putInt("movement_mode", 0).putInt("movement_deadzone", 1)
+                .putBoolean("invert_x", false).putBoolean("invert_y", false).apply();
+            return;
+        }
+        if ("directions".equals(id)) { cycle("movement_mode", 2, direction); return; }
+        if ("deadzone".equals(id)) {
+            int v = preferences.getInt("movement_deadzone", 1);
+            preferences.edit().putInt("movement_deadzone", (v + direction + 3) % 3).apply();
+            return;
+        }
+        if ("invert_x".equals(id) || "invert_y".equals(id) || "touch_sides".equals(id)) {
+            preferences.edit().putBoolean(id, !preferences.getBoolean(id, false)).apply();
+            updateTouchControls();
+            return;
+        }
+        if ("touch_mode".equals(id)) cycle("touch_mode", 3, direction);
+        else if ("touch_size".equals(id)) {
+            int v = preferences.getInt(id, 1);
+            preferences.edit().putInt(id, (v + direction + 3) % 3).apply();
+        } else if ("touch_opacity".equals(id)) {
+            int v = preferences.getInt(id, 1);
+            preferences.edit().putInt(id, (v + direction + 3) % 3).apply();
+        } else if ("touch_pad".equals(id)) cycle(id, 2, direction);
+        else if ("touch_position".equals(id)) {
+            int v = preferences.getInt(id, 1);
+            preferences.edit().putInt(id, (v + direction + 3) % 3).apply();
+        } else if ("touch_reset".equals(id)) {
+            preferences.edit().putInt("touch_mode", 0).putInt("touch_size", 1)
+                .putInt("touch_opacity", 1).putInt("touch_pad", 0)
+                .putBoolean("touch_sides", false).putInt("touch_position", 1).apply();
+        } else if ("check".equals(id)) {
+            android.widget.Toast.makeText(this, "No update feed is configured for this test port",
+                android.widget.Toast.LENGTH_SHORT).show();
+        }
+        updateTouchControls();
+    }
+
+    /** Switch Auto controls only when the input method actually changes. */
+    private void noteGamepadInput() {
+        if (lastInputWasTouch) {
+            lastInputWasTouch = false;
+            updateTouchControls();
+        }
+    }
+
+    @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        // Re-enable touch controls on a touch gesture, even though the Odin's
+        // physical gamepad always appears connected. The menu manages itself.
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN &&
+            webView != null && frontend != null && !frontend.isOpen() &&
+            preferences != null && preferences.getInt("touch_mode", 0) == 0 &&
+            !lastInputWasTouch) {
+            lastInputWasTouch = true;
+            updateTouchControls();
+        }
+        return super.dispatchTouchEvent(event);
+    }
+
+    private void updateTouchControls() {
+        if (touchControls == null) return;
+        int mode = preferences.getInt("touch_mode", 0);
+        boolean show = webView != null && (frontend == null || !frontend.isOpen()) &&
+            (mode == 1 || mode == 0 && lastInputWasTouch);
+        if (!show) touchControls.releaseAll();
+        touchControls.setVisibility(show ? View.VISIBLE : View.GONE);
+        touchControls.configure(preferences.getInt("touch_size", 1),
+            preferences.getInt("touch_opacity", 1),
+            preferences.getInt("touch_pad", 0),
+            preferences.getBoolean("touch_sides", false),
+            preferences.getInt("touch_position", 1));
+    }
+
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
-        String key = keyFor(event.getKeyCode());
+        int code = event.getKeyCode();
+        if (frontend != null && frontend.isOpen()) return frontend.handleKeyEvent(event);
+        if (frontend != null && code == KeyEvent.KEYCODE_BUTTON_START) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
+                frontend.open();
+            return true;
+        }
+        String key = keyFor(code);
         if (key != null && webView != null &&
                 (event.getAction() == KeyEvent.ACTION_DOWN || event.getAction() == KeyEvent.ACTION_UP)) {
-            jsKey(key, event.getAction() == KeyEvent.ACTION_DOWN, "buttons");
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                noteGamepadInput();
+                if (!pressedGamepadButtons.add(code)) return true;
+            } else {
+                if (!pressedGamepadButtons.remove(code)) return true;
+            }
+            jsKey(key, event.getAction() == KeyEvent.ACTION_DOWN, "button" + code);
             return true;
         }
         return super.dispatchKeyEvent(event);
     }
 
     @Override public boolean dispatchGenericMotionEvent(MotionEvent e) {
+        if (frontend != null && frontend.handleGenericMotionEvent(e)) return true;
         if (webView != null && (e.getSource() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK &&
                 e.getAction() == MotionEvent.ACTION_MOVE) {
             float x = e.getAxisValue(MotionEvent.AXIS_X), y = e.getAxisValue(MotionEvent.AXIS_Y);
-            boolean l = x < -0.35f, r = x > 0.35f, u = y < -0.35f, d = y > 0.35f;
+            float hx = e.getAxisValue(MotionEvent.AXIS_HAT_X);
+            float hy = e.getAxisValue(MotionEvent.AXIS_HAT_Y);
+            // Don't hide virtual controls for neutral background joystick events.
+            if (Math.abs(x) > 0.25f || Math.abs(y) > 0.25f ||
+                Math.abs(hx) > 0.5f || Math.abs(hy) > 0.5f)
+                noteGamepadInput();
+            // A physical D-pad can report HAT_X/HAT_Y rather than DPAD keycodes.
+            // Use a separate JS input source so it works simultaneously with
+            // the left stick, keycode D-pad and touch movement.
+            boolean hl = hx < -0.5f, hr = hx > 0.5f;
+            boolean hu = hy < -0.5f, hd = hy > 0.5f;
+            if (hl != hatLeft) { jsKey("left", hl, "hat"); hatLeft = hl; }
+            if (hr != hatRight) { jsKey("right", hr, "hat"); hatRight = hr; }
+            if (hu != hatUp) { jsKey("up", hu, "hat"); hatUp = hu; }
+            if (hd != hatDown) { jsKey("down", hd, "hat"); hatDown = hd; }
+
+            if (preferences.getBoolean("invert_x", false)) x = -x;
+            if (preferences.getBoolean("invert_y", false)) y = -y;
+            float zone = new float[]{0.25f, 0.35f, 0.48f}[Math.max(0,
+                Math.min(2, preferences.getInt("movement_deadzone", 1)))];
+            if (preferences.getInt("movement_mode", 0) == 1) {
+                if (Math.abs(x) >= Math.abs(y)) y = 0f; else x = 0f;
+            }
+            boolean l = x < -zone, r = x > zone, u = y < -zone, d = y > zone;
             if (l != stickLeft) { jsKey("left", l, "stick"); stickLeft = l; }
             if (r != stickRight) { jsKey("right", r, "stick"); stickRight = r; }
             if (u != stickUp) { jsKey("up", u, "stick"); stickUp = u; }
@@ -214,10 +587,42 @@ public final class MainActivity extends Activity {
         return super.dispatchGenericMotionEvent(e);
     }
 
-    @Override protected void onPause() { super.onPause(); if(webView!=null)webView.onPause(); }
-    @Override protected void onResume() { super.onResume(); if(webView!=null)webView.onResume(); }
+    @Override protected void onPause() {
+        if (webView != null) {
+            releaseGameInputs();
+            webView.evaluateJavascript("window.dadSetBackgroundPaused && window.dadSetBackgroundPaused(true)", null);
+            webView.onPause();
+        }
+        speakerTest.stop();
+        super.onPause();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (webView != null) {
+            webView.onResume();
+            webView.evaluateJavascript("window.dadSetBackgroundPaused && window.dadSetBackgroundPaused(false)", null);
+        }
+        updateTouchControls();
+    }
+
     @Override protected void onDestroy() {
-        if (webView != null) { root.removeView(webView); webView.destroy(); webView = null; }
+        speakerTest.stop();
+        releaseGameInputs();
+        if (webView != null) {
+            root.removeView(webView);
+            webView.destroy();
+            webView = null;
+        }
         super.onDestroy();
+    }
+
+    @Override public void onBackPressed() {
+        if (frontend != null && frontend.isOpen()) frontend.back();
+        else super.onBackPressed();
+    }
+
+    private int dp(float v) {
+        return Math.round(v * getResources().getDisplayMetrics().density);
     }
 }

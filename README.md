@@ -1,29 +1,30 @@
-# Dad 'n Me — Android starter
+# Dad 'n Me — Android
 
-An **uncompiled, first-pass test project** for loading the original Flash game in a standalone Ruffle-based Android app. Target: AYN Odin 2 Portal.
+An unofficial Android port of the classic Flash beat 'em up **Dad 'n Me**, powered by [Ruffle](https://ruffle.rs) and featuring [FrostFrontend](https://github.com/Frostie77/FrostFrontend).
 
-This is **separate from Arcane** and does not include the game SWF. On first launch, use **Select SWF File** to import your own copy privately.
+Developed and tested on the **AYN Odin 2 Portal**.
 
-## Test controller inputs
+## Playing
 
-- Left stick or D-pad: movement (arrow keys)
-- A: light attack (Flash A key)
-- X: heavy attack (Flash S key)
+The game is **not included** in this repository or the Android wrapper. Install the Android app, open it, and use **Select SWF File** to import your own copy of `dad-n-me.swf`.
 
-The mapping and game load have **not yet been tested on the Odin**. They may need adjustment.
+## Features
 
-## Build on Windows
+- Controller support: left stick or D-pad movement, **A** for Light Attack, **X** for Heavy Attack
+- Remappable attack buttons through **FrostFrontend → Controls**
+- On-screen joystick or D-pad, plus **Light** and **Heavy** touch buttons
+- **Original 4:3** and **Stretch to Screen** display modes
+- **Sound → Speaker Test: Left → Right → Both**
+- Custom flaming-mask Android launcher icon
 
-In PowerShell, with this folder open, run:
+Press **Start** to open FrostFrontend.
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build-test.ps1
-```
+## Development
 
-The script downloads Ruffle assets, builds using Android SDK/JDK 17/Gradle, and installs the test APK if an authorized device is connected. The paths are tuned for the existing Arcane Windows development setup.
+The Android project uses Ruffle to run the original Flash game and includes FrostFrontend as a Git submodule. The SWF and compiled dependencies are not committed to the repository.
 
-**Future milestone:** once we verify the SWF displays and controls work, integrate FrostFrontend (including the universal Speaker Test and game-specific control profile). Nothing here modifies Arcane or the released FrostFrontend library.
+## Credits and licence
 
-## Disclaimer
+**Dad 'n Me** and its original game assets belong to their respective rights holders. This is an unofficial, unaffiliated Android compatibility project.
 
-This is an unofficial compatibility project. Dad 'n Me, its assets and music belong to their original copyright holders. No game data is included. Ruffle is an independent open-source Flash runtime.
+Original Android wrapper source is licensed under [MIT](LICENSE). Third-party components, including Ruffle and FrostFrontend, retain their own licensing terms.

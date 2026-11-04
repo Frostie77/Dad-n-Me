@@ -4,9 +4,13 @@ An unofficial Android port of the classic Flash beat 'em up **Dad 'n Me**, power
 
 Developed and tested on the **AYN Odin 2 Portal**.
 
-## Playing
+## Download and installation
 
-The game is **not included** in this repository or the Android wrapper. Install the Android app, open it, and use **Select SWF File** to import your own copy of `dad-n-me.swf`.
+1. Install the Dad 'n Me Android APK.
+2. Get the original Flash game from [Dad 'n Me on Newgrounds](https://www.newgrounds.com/portal/view/254456), or try the [original Newgrounds SWF file](https://uploads.ungrounded.net/254000/254456_DadNMeNewgrounds.swf).
+3. Open the Android app and tap **Select SWF File** to import your downloaded `.swf`. The app stores it privately; you only need to import it once.
+
+If the SWF link opens in your browser instead of downloading, use **Save link as**. The original game file is **not included** in this repository or the APK.
 
 ## Features
 
@@ -25,6 +29,8 @@ The Android project uses Ruffle to run the original Flash game and includes Fros
 
 ## Credits and licence
 
-**Dad 'n Me** and its original game assets belong to their respective rights holders. This is an unofficial, unaffiliated Android compatibility project.
+**Original game:** [Dad 'n Me on Newgrounds](https://www.newgrounds.com/portal/view/254456) (2005). Programming by **[Tom Fulp](https://tomfulp.newgrounds.com/)**, artwork by **[Dan Paladin](https://danpaladin.newgrounds.com/)**, and music by **[Dustball](https://dustball.newgrounds.com/)**.
+
+The game and its assets belong to their respective rights holders. This is an unofficial, unaffiliated Android compatibility project.
 
 Original Android wrapper source is licensed under [MIT](LICENSE). Third-party components, including Ruffle and FrostFrontend, retain their own licensing terms.

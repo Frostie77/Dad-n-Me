@@ -25,7 +25,7 @@ Press **Start** to open FrostFrontend.
 
 ## Updates
 
-The current public release is **v0.1.0**. Live GitHub update checking (manual checks and optional automatic checks on startup) is being added for the next signed release, **v0.1.1**. Once available, FrostFrontend will offer a link to the published GitHub release; it will **never download or install an APK automatically**. Existing v0.1.0 installations cannot check for updates in-app.
+The current public release is **v0.1.1**. FrostFrontend supports manual GitHub release checks and optional automatic checks on startup. When a newer stable version is available, it provides a link to the published GitHub release; it **never downloads or installs an APK automatically**. The earlier v0.1.0 build did not include update checking.
 
 Future signed updates use the same package name and signing key, allowing installation over an existing public release without uninstalling it. Debug builds use a different signing certificate; don't uninstall an app with unsaved data without backing it up first.
 

@@ -98,7 +98,7 @@ final class DadNMeUpdates {
                 "Installed version unavailable");
             boolean available = compare(version, installed) > 0;
             return new Result(available ? "A newer Android release is available." :
-                    "You have the latest published Android release.",
+                    "No newer stable Android release is published.",
                 tag, available ? releaseUrl : null, available);
         } catch (Exception failure) {
             return new Result("Unable to verify updates. Check your connection and try again.",
